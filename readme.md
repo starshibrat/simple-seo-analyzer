@@ -8,6 +8,7 @@
 <p>4. Check img</p>
 <p>5. Check href link</p>
 <p>6. Check Content Readability</p>
+<p>7. XML Sitemap Generator</p>
 
 
 <h2>Libraries:</h2>
