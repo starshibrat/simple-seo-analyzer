@@ -9,6 +9,8 @@ import pyphen
 import nltk
 import sys
 from nltk.tokenize import sent_tokenize
+from xml.dom import minidom
+import datetime
 
 url = "https://requests.readthedocs.io/en/latest/"
 
@@ -161,6 +163,88 @@ def check_readability(txt: str, lang: str="en_US"):
 
     return 206.835 - 1.015*(tw/ts) - 84.6*(tsy/tw)
 
+class Freq(Enum):
+    ALWAYS = 0,
+    HOURLY = 1,
+    DAILY = 2,
+    WEEKLY = 3,
+    MONTHLY = 4,
+    YEARLY = 5,
+    NEVER = 6
+
+class SMEntity:
+    def __init__(self, loc: str, lastmod: str=None, changefreq: Freq=None, priority: float=None):
+        self.loc = loc
+        self.lastmod = lastmod
+        self.changefreq = changefreq
+        self.priority = priority
+
+def match_freq(freq: Freq):
+    match(freq):
+        case Freq.ALWAYS:
+            return "always"
+        case Freq.HOURLY:
+            return "hourly"
+        case Freq.DAILY:
+            return "daily"
+        case Freq.WEEKLY:
+            return "weekly"
+        case Freq.MONTHLY:
+            return "monthly"
+        case Freq.YEARLY:
+            return "yearly"
+        case Freq.NEVER:
+            return "never"
+        case _:
+            return ""
+
+def validate_date(str):
+    try:
+        if str == datetime.datetime.strptime(str, "%Y-%m-%d").strftime('%Y-%m-%d'):
+            return str
+    except ValueError:
+        return datetime.datetime.now().strftime('%Y-%m-%d')
+
+def create_xml_sitemap(urls: list[SMEntity], filename="sitemap.xml"):
+    doc = minidom.Document()
+
+    root = doc.createElement('urlset')
+    root.setAttribute("xmlns", "http://www.sitemaps.org/schemas/sitemap/0.9")
+    doc.appendChild(root)
+
+    for u in urls:
+        url = doc.createElement('url')
+        loc = doc.createElement('loc')
+        locTxt = doc.createTextNode(u.loc)
+        loc.appendChild(locTxt)
+        url.appendChild(loc)
+
+        if u.lastmod is not None:
+            the_date = validate_date(u.lastmod)
+            lastmod = doc.createElement('lastmod')
+            lastmodTxt = doc.createTextNode(the_date)
+            lastmod.appendChild(lastmodTxt)
+            url.appendChild(lastmod)
+
+        freq = match_freq(u.changefreq)
+        if freq != "":
+            changefreq = doc.createElement('changefreq')
+            changefreqTxt = doc.createTextNode(freq)
+            changefreq.appendChild(changefreqTxt)
+            url.appendChild(changefreq)
+
+        if u.priority is not None and u.priority >= 0.0 and u.priority <= 1.0:
+            priority = doc.createElement("priority")
+            priorityTxt = doc.createTextNode("{:.1f}".format(u.priority))
+            priority.appendChild(priorityTxt)
+            url.appendChild(priority)
+
+        root.appendChild(url)
+
+    xml_str = doc.toprettyxml(indent="  ")
+    with open(filename, "w") as f:
+        f.write(xml_str)
+
 
 class TestFeatures(unittest.TestCase):
     def init_soup(self):
@@ -256,6 +340,17 @@ class TestFeatures(unittest.TestCase):
         except Exception as e:
             self.fail(f"Exception: {e}")
 
+    def test_create_xml(self):
+        try:
+            links = [
+                SMEntity("https://www.sitemaps.org/", changefreq=Freq.HOURLY, priority=2.3, lastmod='2023-04-10'),
+                SMEntity("https://docs.python.org/", priority=0.8),
+                SMEntity("https://stackoverflow.com/", changefreq=Freq.DAILY, priority=0.4, lastmod='ascmk')
+            ]
+            create_xml_sitemap(links)
+        except Exception as e:
+            self.fail(f"Exception: {e}")
+
 def check_url_input(url: str) -> bool:
     return url.startswith("http://") or url.startswith("https://")
 
@@ -293,6 +388,49 @@ def readability_ui():
     lang = input("Language (code): ")
     inp = input("Enter text: ")
     print("\nScore: ", check_readability(inp, lang))
+
+def sitemap_ui():
+    print("Sitemap Generator")
+    inp = int(input("How many link? "))
+    urls = []
+    for i in range(inp):
+        print("\m")
+        loc = input("loc: ")
+        lastmod = input("lastmod (YYYY-MM-DD): (just enter if empty) ")
+
+        if lastmod == "":
+            lastmod = None
+
+        print("changefreq value:\n1. Always 2. Hourly 3. Daily 4. Weekly 5. Monthly 6. Yearly 7. Never\n")
+        changefreq = input("changefreq: (just enter if empty)")
+
+        match changefreq:
+            case "1":
+                changefreq = Freq.ALWAYS
+            case "2":
+                changefreq = Freq.HOURLY
+            case "3":
+                changefreq = Freq.DAILY
+            case "4":
+                changefreq = Freq.WEEKLY
+            case "5":
+                changefreq = Freq.MONTHLY
+            case "6":
+                changefreq = Freq.YEARLY
+            case "7":
+                changefreq = Freq.NEVER
+            case _:
+                changefreq = None
+        
+        try:
+            priority = float(input("priority (0.0 - 1.0): (just enter if empty)"))
+        except Exception as e:
+            priority = None
+
+        sm = SMEntity(loc, lastmod, changefreq, priority)
+        urls.append(sm)
+
+    create_xml_sitemap(urls)
 
 def ui():
     print("Simple SEO Audit Tools\n\n")
@@ -347,13 +485,15 @@ def ui():
         while(True):
             print("""\n
                 1. Check Content Readability
+                2. Sitemap (XML) Generator
                 """)
             inp = input(">>> ")
             print("\n")
             match inp:
                 case "1":
                     readability_ui()
-                    
+                case "2":
+                    sitemap_ui()
                 case _:
                     break
     
